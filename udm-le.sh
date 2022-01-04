@@ -25,9 +25,8 @@ deploy_certs() {
 	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${CAPTIVE_HOST}".crt -mmin -5)" ]; then
 		echo 'New ${CAPTIVE_HOST} certificate was generated, time to deploy it'
 
-		cp -f ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.crt ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.crt
-		cp -f ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.key
-		podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UNIFIOS_CERT_PATH}/${CAPTIVE_HOST}.key ${UNIFIOS_CERT_PATH}/${CAPTIVE_HOST}.crt
+		openssl pkcs12 -export -in ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.crt -inkey ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key -out ${UBIOS_CONTROLLER_CERT_PATH}/unifi.p12 -name unifi -caname root -passin pass:aircontrolenterprise -passout pass:aircontrolenterprise
+		podman exec unifi-os keytool -noprompt -importkeystore -deststorepass aircontrolenterprise -destkeypass aircontrolenterprise -destkeystore /usr/lib/unifi/data/keystore -srckeystore ${UNIFIOS_CERT_PATH}/unifi.p12 -srcstoretype PKCS12 -alias unifi -srcstorepass aircontrolenterprise
 
 		RESTART_SERVICES=true
 	fi
