@@ -33,12 +33,12 @@ deploy_certs() {
 	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${DNS_HOST}".crt -mmin -5)" ]; then
 		echo 'New ${DNS_HOST} certificate was generated, time to deploy it'
 
-        podman exec -it pihole mkdir -p /etc/letsencrypt/live/${DNS_HOST}
-        podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.crt pihole:/etc/letsencrypt/live/${DNS_HOST}/fullchain.pem
-        podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.key pihole:/etc/letsencrypt/live/${DNS_HOST}/privkey.pem
-        podman exec -it pihole chown www-data -R /etc/letsencrypt/live
-        podman cp /mnt/data/pihole/certs/external.conf pihole:/etc/lighttpd/external.conf
-        podman exec -it pihole service lighttpd restart
+		podman exec -it pihole mkdir -p /etc/letsencrypt/live/${DNS_HOST}
+		podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.crt pihole:/etc/letsencrypt/live/${DNS_HOST}/fullchain.pem
+		podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.key pihole:/etc/letsencrypt/live/${DNS_HOST}/privkey.pem
+		podman exec -it pihole chown www-data -R /etc/letsencrypt/live
+		podman cp /mnt/data/pihole/certs/external.conf pihole:/etc/lighttpd/external.conf
+		podman exec -it pihole service lighttpd restart
 	fi
 	
 	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${RADIUS_HOST}".crt -mmin -5)" ]; then
