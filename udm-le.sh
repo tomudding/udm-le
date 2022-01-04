@@ -11,28 +11,43 @@ LEGO_ARGS="--dns ${DNS_PROVIDER} --email ${CERT_EMAIL} --key-type rsa2048"
 RESTART_SERVICES=${RESTART_SERVICES:-false}
 
 deploy_certs() {
-	# Deploy certificates for the controller and optionally for the captive portal and radius server
+	# Deploy certificates for the controller, captive portal, dns resolver, and radius server
+	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${NETWORK_HOST}".crt -mmin -5)" ]; then
+		echo 'New ${NETWORK_HOST} certificate was generated, time to deploy it'
 
-	# Re-write CERT_NAME if it is a wildcard cert. Replace * with _
-	LEGO_CERT_NAME=${CERT_NAME/\*/_}
-	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${LEGO_CERT_NAME}".crt -mmin -5)" ]; then
-		echo 'New certificate was generated, time to deploy it'
-
-		cp -f ${UDM_LE_PATH}/lego/certificates/${LEGO_CERT_NAME}.crt ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.crt
-		cp -f ${UDM_LE_PATH}/lego/certificates/${LEGO_CERT_NAME}.key ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.key
+		cp -f ${UDM_LE_PATH}/lego/certificates/${NETWORK_HOST}.crt ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.crt
+		cp -f ${UDM_LE_PATH}/lego/certificates/${NETWORK_HOST}.key ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.key
 		chmod 644 ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.crt ${UBIOS_CONTROLLER_CERT_PATH}/unifi-core.key
 
-		if [ "$ENABLE_CAPTIVE" == "yes" ]; then
-			podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UNIFIOS_CERT_PATH}/unifi-core.key ${UNIFIOS_CERT_PATH}/unifi-core.crt
-		fi
+		RESTART_SERVICES=true
+	fi
+	
+	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${CAPTIVE_HOST}".crt -mmin -5)" ]; then
+		echo 'New ${CAPTIVE_HOST} certificate was generated, time to deploy it'
 
-		if [ "$ENABLE_RADIUS" == "yes" ]; then
-			cp -f ${UDM_LE_PATH}/lego/certificates/${LEGO_CERT_NAME}.crt ${UBIOS_RADIUS_CERT_PATH}/server.pem
-			cp -f ${UDM_LE_PATH}/lego/certificates/${LEGO_CERT_NAME}.key ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
-			chmod 600 ${UBIOS_RADIUS_CERT_PATH}/server.pem ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
-		fi
+		podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.crt
 
 		RESTART_SERVICES=true
+	fi
+	
+	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${DNS_HOST}".crt -mmin -5)" ]; then
+		echo 'New ${DNS_HOST} certificate was generated, time to deploy it'
+
+        podman exec -it pihole mkdir -p /etc/letsencrypt/live/${DNS_HOST}
+        podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.crt pihole:/etc/letsencrypt/live/${DNS_HOST}/fullchain.pem
+        podman cp ${UDM_LE_PATH}/lego/certificates/${DNS_HOST}.key pihole:/etc/letsencrypt/live/${DNS_HOST}/privkey.pem
+        podman exec -it pihole chown www-data -R /etc/letsencrypt/live
+        podman cp /mnt/data/pihole/certs/external.conf pihole:/etc/lighttpd/external.conf
+        podman exec -it pihole service lighttpd restart
+	fi
+	
+	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${RADIUS_HOST}".crt -mmin -5)" ]; then
+		echo 'New ${RADIUS_HOST} certificate was generated, time to deploy it'
+
+		cp -f ${UDM_LE_PATH}/lego/certificates/${RADIUS_HOST}.crt ${UBIOS_RADIUS_CERT_PATH}/server.pem
+		cp -f ${UDM_LE_PATH}/lego/certificates/${RADIUS_HOST}.key ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
+		chmod 600 ${UBIOS_RADIUS_CERT_PATH}/server.pem ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
+		rc.radius restart &>/dev/null
 	fi
 }
 
@@ -41,11 +56,6 @@ restart_services() {
 	if [ "${RESTART_SERVICES}" == true ]; then
 		echo 'Restarting UniFi OS'
 		unifi-os restart &>/dev/null
-
-		if [ "$ENABLE_RADIUS" == "yes" ]; then
-			echo 'Restarting Radius server'
-			rc.radius restart &>/dev/null
-		fi
 	else
 		echo 'RESTART_SERVICES is false, skipping service restarts'
 	fi
@@ -56,13 +66,11 @@ if [ "${DNS_RESOLVERS}" != "" ]; then
 	LEGO_ARGS="${LEGO_ARGS} --dns.resolvers ${DNS_RESOLVERS}"
 fi
 
-# Support multiple certificate SANs
-for DOMAIN in $(echo $CERT_HOSTS | tr "," "\n"); do
-	if [ -z "$CERT_NAME" ]; then
-		CERT_NAME=$DOMAIN
-	fi
-	LEGO_ARGS="${LEGO_ARGS} -d ${DOMAIN}"
-done
+# Setup all the domains
+LEGO_ARGS_NETWORK="${LEGO_ARGS} -d ${NETWORK_HOST}"
+LEGO_ARGS_CAPTIVE="${LEGO_ARGS} -d ${CAPTIVE_HOST}"
+LEGO_ARGS_DNS="${LEGO_ARGS} -d ${DNS_HOST}"
+LEGO_ARGS_RADIUS="${LEGO_ARGS} -d ${RADIUS_HOST}"
 
 # Check for optional .secrets directory, and add it to the mounts if it exists
 # Lego does not support AWS_ACCESS_KEY_ID_FILE or AWS_PROFILE_FILE so we'll try
@@ -98,11 +106,11 @@ initial)
 	fi
 
 	echo 'Attempting initial certificate generation'
-	${PODMAN_CMD} ${LEGO_ARGS} --accept-tos run && deploy_certs && restart_services
+	${PODMAN_CMD} ${LEGO_ARGS_NETWORK} --accept-tos run && ${PODMAN_CMD} ${LEGO_ARGS_CAPTIVE} --accept-tos run && ${PODMAN_CMD} ${LEGO_ARGS_DNS} --accept-tos run && ${PODMAN_CMD} ${LEGO_ARGS_RADIUS} --accept-tos run && deploy_certs && restart_services
 	;;
 renew)
 	echo 'Attempting certificate renewal'
-	${PODMAN_CMD} ${LEGO_ARGS} renew --days 60 && deploy_certs && restart_services
+	${PODMAN_CMD} ${LEGO_ARGS_NETWORK} renew --days 60 && ${PODMAN_CMD} ${LEGO_ARGS_CAPTIVE} renew --days 60 && ${PODMAN_CMD} ${LEGO_ARGS_DNS} renew --days 60 && ${PODMAN_CMD} ${LEGO_ARGS_RADIUS} renew --days 60 && deploy_certs && restart_services
 	;;
 test_deploy)
 	echo 'Attempting to deploy certificate'
