@@ -25,7 +25,9 @@ deploy_certs() {
 	if [ "$(find -L "${UDM_LE_PATH}"/lego -type f -name "${CAPTIVE_HOST}".crt -mmin -5)" ]; then
 		echo 'New ${CAPTIVE_HOST} certificate was generated, time to deploy it'
 
-		podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.crt
+		cp -f ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.crt ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.crt
+		cp -f ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.key
+		podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.key ${UBIOS_CONTROLLER_CERT_PATH}/${CAPTIVE_HOST}.crt
 
 		RESTART_SERVICES=true
 	fi
