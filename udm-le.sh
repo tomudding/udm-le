@@ -30,7 +30,11 @@ deploy_certs() {
         cp -f ${UDM_LE_PATH}/lego/certificates/${CAPTIVE_HOST}.key ${UBIOS_CERT_PATH}/unifi-captive-core.key
         chmod 644 ${UBIOS_CERT_PATH}/unifi-captive-core.crt ${UBIOS_CERT_PATH}/unifi-captive-core.key
 
-        podman exec -it unifi-os ${CERT_IMPORT_CMD} ${UNIFIOS_CERT_PATH}/unifi-captive-core.key ${UNIFIOS_CERT_PATH}/unifi-captive-core.crt
+        podman exec -it unifi-os openssl x509 -in ${UNIFIOS_CERT_PATH}/unifi-captive-core.crt > ${UNIFIOS_CERT_PATH}/unifi-captive-core-server-only.crt
+        podman exec -it unifi-os openssl pkcs12 -export -inkey ${UNIFIOS_CERT_PATH}/unifi-captive-core.key -in ${UNIFIOS_CERT_PATH}/unifi-captive-core-server-only.crt -out /usr/lib/unifi/data/unifi-captive-core-key-plus-server-only-cert.p12 -name unifi -password pass:aircontrolenterprise
+        podman exec -it unifi-os cp /usr/lib/unifi/data/keystore /usr/lib/unifi/data/keystore_$(date +"%Y-%m-%d_%Hh%Mm%Ss").backup
+        podman exec -it unifi-os keytool -delete -alias unifi -keystore /usr/lib/unifi/data/keystore -deststorepass aircontrolenterprise
+        podman exec -it unifi-os keytool -importkeystore -deststorepass aircontrolenterprise -destkeypass aircontrolenterprise -destkeystore /usr/lib/unifi/data/keystore -srckeystore /usr/lib/unifi/data/unifi-captive-core-key-plus-server-only-cert.p12 -srcstoretype PKCS12 -srcstorepass aircontrolenterprise -alias unifi -noprompt
 
         RESTART_SERVICES=true
     fi
@@ -107,8 +111,8 @@ case $1 in
 initial)
     # Create lego directory so the container can write to it
     if [ "$(stat -c '%u:%g' "${UDM_LE_PATH}/lego")" != "1000:1000" ]; then
-        mkdir "${UDM_LE_PATH}"/lego
-        chown 1000:1000 "${UDM_LE_PATH}"/lego
+            mkdir "${UDM_LE_PATH}"/lego
+            chown 1000:1000 "${UDM_LE_PATH}"/lego
     fi
 
     echo 'Attempting initial certificate generation'
