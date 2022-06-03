@@ -57,7 +57,7 @@ deploy_certs() {
         cp -f ${UDM_LE_PATH}/lego/certificates/${RADIUS_HOST}.crt ${UBIOS_RADIUS_CERT_PATH}/server.pem
         cp -f ${UDM_LE_PATH}/lego/certificates/${RADIUS_HOST}.key ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
         chmod 600 ${UBIOS_RADIUS_CERT_PATH}/server.pem ${UBIOS_RADIUS_CERT_PATH}/server-key.pem
-        rc.radius restart &>/dev/null
+        rc.radiusd restart &>/dev/null
     fi
 }
 
